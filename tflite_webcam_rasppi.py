@@ -1,6 +1,6 @@
 import cv2
 import numpy as np
-import tensorflow as tf
+import tflite_runtime.interpreter as tflite
 from PIL import Image
 
 TFLITE_MODEL_PATH = "model.tflite"
@@ -45,15 +45,15 @@ PEST_NAMES = {
     '14': "rice shell pest"
 }
 
-# Load TFLite Model 
+# Load TFLite Model
 print("Loading TFLite model...")
-interpreter = tf.lite.Interpreter(model_path=TFLITE_MODEL_PATH)
+interpreter = tflite.Interpreter(model_path=TFLITE_MODEL_PATH)
 interpreter.allocate_tensors()
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 print("TFLite model loaded.")
 
-# Preprocessing Function 
+# Preprocessing Function
 def preprocess(frame):
     img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     img = cv2.resize(img, IMG_SIZE)
@@ -61,8 +61,8 @@ def preprocess(frame):
     img = np.expand_dims(img, axis=0)
     return img.astype(input_details[0]['dtype'])
 
-#Webcam Prediction Loop
-cap = cv2.VideoCapture(0)  
+# Webcam Prediction Loop
+cap = cv2.VideoCapture(0)
 
 if not cap.isOpened():
     print("Error: Could not access webcam.")
@@ -87,7 +87,6 @@ while True:
     pest_name = PEST_NAMES.get(folder_num, "Unknown Pest")
     confidence = prediction[idx]
 
-    # Overlay prediction
     label = f"{pest_name} ({confidence * 100:.2f}%)"
     cv2.putText(frame, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
                 0.7, (0, 255, 0), 2)
