@@ -1,17 +1,19 @@
 import cv2
 import numpy as np
-import tflite_runtime.interpreter as tflite
+import tensorflow as tf
 from PIL import Image
 
-TFLITE_MODEL_PATH = "model.tflite"
+# ==== CONFIG ====
+MODEL_PATH = "insect_identification.keras"
 IMG_SIZE = (224, 224)
 
+# Must match order of classes in training
 SELECTED_CLASSES = [
     '62', '61', '56', '73', '80', '75', '65', '43', '72', '98',
     '79', '15', '81', '63', '25', '35', '96', '31', '74', '82',
     '53', '78', '94', '30', '67', '85', '36', '58', '48', '14'
 ]
-
+print(len(SELECTED_CLASSES))
 PEST_NAMES = {
     '62': "Brevipoalpus lewisi McGregor",
     '61': "Colomerus vitis",
@@ -45,24 +47,19 @@ PEST_NAMES = {
     '14': "rice shell pest"
 }
 
-# Load TFLite Model
-print("Loading TFLite model...")
-interpreter = tflite.Interpreter(model_path=TFLITE_MODEL_PATH)
-interpreter.allocate_tensors()
-input_details = interpreter.get_input_details()
-output_details = interpreter.get_output_details()
-print("TFLite model loaded.")
+# ==== Load Model ====
+print("Loading model...")
+model = tf.keras.models.load_model(MODEL_PATH)
+print("Model loaded.")
 
-# Preprocessing Function
+# ==== Webcam Prediction ====
 def preprocess(frame):
     img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-    img = cv2.resize(img, IMG_SIZE)
+    img = cv2.resize(img, IMG_SIZE) 
     img = np.array(img, dtype=np.float32) / 255.0
-    img = np.expand_dims(img, axis=0)
-    return img.astype(input_details[0]['dtype'])
+    return np.expand_dims(img, axis=0)
 
-# Webcam Prediction Loop
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 
 if not cap.isOpened():
     print("Error: Could not access webcam.")
@@ -76,22 +73,20 @@ while True:
         print("Failed to grab frame.")
         break
 
+    # Preprocess and predict
     input_tensor = preprocess(frame)
-
-    interpreter.set_tensor(input_details[0]['index'], input_tensor)
-    interpreter.invoke()
-    prediction = interpreter.get_tensor(output_details[0]['index'])[0]
-
+    prediction = model.predict(input_tensor)[0]
     idx = np.argmax(prediction)
     folder_num = SELECTED_CLASSES[idx]
     pest_name = PEST_NAMES.get(folder_num, "Unknown Pest")
     confidence = prediction[idx]
 
-    label = f"{pest_name} ({confidence * 100:.2f}%)"
+    # Overlay prediction
+    label = f"{pest_name} ({confidence*100:.2f}%)"
     cv2.putText(frame, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
                 0.7, (0, 255, 0), 2)
 
-    cv2.imshow("Live Pest Detection (TFLite)", frame)
+    cv2.imshow("Live Pest Detection", frame)
 
     if cv2.waitKey(1) & 0xFF == ord('q'):
         break
