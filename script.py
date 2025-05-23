@@ -4,8 +4,17 @@ import numpy as np
 from picamera2 import Picamera2
 import tensorflow as tf
 import RPi.GPIO as GPIO
+import time
+import threading
 
-# ==== CONFIG ====
+def blink_led(duration=10, interval=0.5):
+    end_time = time.time() + duration
+    while time.time() < end_time:
+        GPIO.output(LED_PIN, GPIO.HIGH)
+        time.sleep(interval)
+        GPIO.output(LED_PIN, GPIO.LOW)
+        time.sleep(interval)
+
 MODEL_PATH = "model.tflite"
 IMG_SIZE = (224, 224)
 model_active = True  # Controls pause/resume
@@ -29,7 +38,7 @@ PEST_NAMES = {
     '58': "Apolygus lucorum", '48': "tarnished plant bug", '14': "rice shell pest"
 }
 
-# ==== Load TFLite Model ====
+# Load TFLite Model 
 print("Loading TFLite model...")
 interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
@@ -37,14 +46,14 @@ input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 print("TFLite model loaded.")
 
-# ==== Camera Setup ====
+# Camera Setup 
 picam2 = Picamera2()
 picam2.preview_configuration.main.size = (640, 480)
 picam2.preview_configuration.main.format = "RGB888"
 picam2.configure("preview")
 picam2.start()
 
-# ==== Flask App ====
+# Flask App 
 app = Flask(__name__)
 last_label = "Loading..."
 
@@ -162,6 +171,9 @@ def resume():
     return "Model Resumed"
 
 if __name__ == '__main__':
+    GPIO.output(LED_PIN, GPIO.LOW)
 
+    # Start LED blinking in a background thread
+    threading.Thread(target=blink_led, args=(10,), daemon=True).start()
     app.run(host='0.0.0.0', port=8000)
 
