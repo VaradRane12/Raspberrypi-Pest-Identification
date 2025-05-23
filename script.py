@@ -54,23 +54,37 @@ def color_correct(frame):
     return cv2.merge((b, g, r))
 
 def generate_frames():
-    global last_label
+    last_prediction = None
+    prediction_count = 0
+    stable_label = "Detecting..."
+    min_confidence = 0.85  # Only show predictions with high confidence
+    required_stability = 5  # Number of frames to confirm prediction
+
     while True:
         frame = picam2.capture_array()
-        frame = color_correct(frame)  # Remove pink tint
-
         input_tensor = preprocess(frame)
+
         interpreter.set_tensor(input_details[0]['index'], input_tensor)
         interpreter.invoke()
         prediction = interpreter.get_tensor(output_details[0]['index'])[0]
 
         idx = np.argmax(prediction)
+        confidence = prediction[idx]
         folder_num = SELECTED_CLASSES[idx]
         pest_name = PEST_NAMES.get(folder_num, "Unknown Pest")
-        confidence = prediction[idx]
 
-        last_label = f"{pest_name} ({confidence*100:.2f}%)"
-        cv2.putText(frame, last_label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
+        # Stability check
+        if confidence > min_confidence and folder_num == last_prediction:
+            prediction_count += 1
+        else:
+            prediction_count = 1
+            last_prediction = folder_num
+
+        if prediction_count >= required_stability:
+            stable_label = f"{pest_name} ({confidence * 100:.2f}%)"
+
+        # Display label on frame
+        cv2.putText(frame, stable_label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
                     0.7, (0, 255, 0), 2)
 
         ret, buffer = cv2.imencode('.jpg', frame)
@@ -78,6 +92,7 @@ def generate_frames():
 
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
 
 @app.route('/')
 def index():
@@ -93,9 +108,9 @@ def index():
         </style>
     </head>
     <body>
-        <h1>🐛 Raspberry Pi Pest Detection</h1>
+        <h1>Raspberry Pi Pest Detection</h1>
         <div class="frame"><img src="{{ url_for('video') }}" width="640" height="480"></div>
-        <div class="label">Current Prediction: <span id="label">{{ label }}</span></div>
+        <div class="label"><h5>Current Prediction: <span id="label">{{ label }}</h5></span></div>
 
         <script>
             setInterval(async () => {
