@@ -7,9 +7,13 @@ import tensorflow as tf
 # ==== CONFIG ====
 MODEL_PATH = "model.tflite"
 IMG_SIZE = (224, 224)
-SELECTED_CLASSES = [ '62', '61', '56', '73', '80', '75', '65', '43', '72', '98',
+model_active = True  # Controls pause/resume
+
+SELECTED_CLASSES = [
+    '62', '61', '56', '73', '80', '75', '65', '43', '72', '98',
     '79', '15', '81', '63', '25', '35', '96', '31', '74', '82',
-    '53', '78', '94', '30', '67', '85', '36', '58', '48', '14' ]
+    '53', '78', '94', '30', '67', '85', '36', '58', '48', '14'
+]
 
 PEST_NAMES = {
     '62': "Brevipoalpus lewisi McGregor", '61': "Colomerus vitis", '56': "alfalfa seed chalcid",
@@ -48,44 +52,44 @@ def preprocess(frame):
     img = np.array(img, dtype=np.float32) / 255.0
     return np.expand_dims(img, axis=0)
 
-def color_correct(frame):
-    b, g, r = cv2.split(frame)
-    r = cv2.subtract(r, 40)  # Reduce red intensity
-    return cv2.merge((b, g, r))
-
 def generate_frames():
+    global model_active, last_label
     last_prediction = None
     prediction_count = 0
     stable_label = "Detecting..."
-    min_confidence = 0.85  # Only show predictions with high confidence
-    required_stability = 5  # Number of frames to confirm prediction
+    min_confidence = 0.85
+    required_stability = 5
 
     while True:
         frame = picam2.capture_array()
-        input_tensor = preprocess(frame)
 
-        interpreter.set_tensor(input_details[0]['index'], input_tensor)
-        interpreter.invoke()
-        prediction = interpreter.get_tensor(output_details[0]['index'])[0]
+        if model_active:
+            input_tensor = preprocess(frame)
+            interpreter.set_tensor(input_details[0]['index'], input_tensor)
+            interpreter.invoke()
+            prediction = interpreter.get_tensor(output_details[0]['index'])[0]
 
-        idx = np.argmax(prediction)
-        confidence = prediction[idx]
-        folder_num = SELECTED_CLASSES[idx]
-        pest_name = PEST_NAMES.get(folder_num, "Unknown Pest")
+            idx = np.argmax(prediction)
+            confidence = prediction[idx]
+            folder_num = SELECTED_CLASSES[idx]
+            pest_name = PEST_NAMES.get(folder_num, "Unknown Pest")
 
-        # Stability check
-        if confidence > min_confidence and folder_num == last_prediction:
-            prediction_count += 1
+            if confidence > min_confidence and folder_num == last_prediction:
+                prediction_count += 1
+            else:
+                prediction_count = 1
+                last_prediction = folder_num
+
+            if prediction_count >= required_stability:
+                last_label = f"{pest_name} ({confidence * 100:.2f}%)"
+                stable_label = last_label
         else:
-            prediction_count = 1
-            last_prediction = folder_num
-
-        if prediction_count >= required_stability:
-            stable_label = f"{pest_name} ({confidence * 100:.2f}%)"
+            stable_label = "Paused"
 
         # Display label on frame
+        color = (0, 255, 0) if model_active else (0, 0, 255)
         cv2.putText(frame, stable_label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.7, (0, 255, 0), 2)
+                    0.7, color, 2)
 
         ret, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
@@ -105,12 +109,17 @@ def index():
             h1 { color: #333; }
             .frame { border: 5px solid #4CAF50; border-radius: 8px; display: inline-block; margin: 10px; }
             .label { font-size: 18px; font-weight: bold; margin-top: 10px; color: #444; }
+            button { padding: 10px 20px; margin: 10px; font-size: 16px; border-radius: 5px; cursor: pointer; }
         </style>
     </head>
     <body>
         <h1>Raspberry Pi Pest Detection</h1>
         <div class="frame"><img src="{{ url_for('video') }}" width="640" height="480"></div>
-        <div class="label"><h5>Current Prediction: <span id="label">{{ label }}</h5></span></div>
+        <div class="label">Current Prediction: <span id="label">{{ label }}</span></div>
+        <div>
+            <button onclick="fetch('/pause')">Pause</button>
+            <button onclick="fetch('/resume')">Resume</button>
+        </div>
 
         <script>
             setInterval(async () => {
@@ -131,6 +140,18 @@ def video():
 @app.route('/label')
 def label():
     return last_label
+
+@app.route('/pause')
+def pause():
+    global model_active
+    model_active = False
+    return "Model Paused"
+
+@app.route('/resume')
+def resume():
+    global model_active
+    model_active = True
+    return "Model Resumed"
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
