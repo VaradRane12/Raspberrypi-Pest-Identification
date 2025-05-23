@@ -5,21 +5,30 @@ from picamera2 import Picamera2
 import tensorflow as tf
 
 # ==== CONFIG ====
-MODEL_PATH = "model.tflite"  # Changed to TFLite model
+MODEL_PATH = "model.tflite"
 IMG_SIZE = (224, 224)
-
-SELECTED_CLASSES = [ 
-    # ... (same as original) ...
-]
+SELECTED_CLASSES = [ '62', '61', '56', '73', '80', '75', '65', '43', '72', '98',
+    '79', '15', '81', '63', '25', '35', '96', '31', '74', '82',
+    '53', '78', '94', '30', '67', '85', '36', '58', '48', '14' ]
 
 PEST_NAMES = {
-    # ... (same as original) ...
+    '62': "Brevipoalpus lewisi McGregor", '61': "Colomerus vitis", '56': "alfalfa seed chalcid",
+    '73': "Erythroneura apicalis", '80': "Chrysomphalus aonidum", '75': "Panonchus citri McGregor",
+    '65': "Pseudococcus comstocki Kuwana", '43': "beet weevil", '72': "Trialeurodes vaporariorum",
+    '98': "Chlumetia transversa", '79': "Ceroplastes rubens", '15': "grub",
+    '81': "Parlatoria zizyphus Lucus", '63': "oides decempunctata", '25': "aphids",
+    '35': "wheat sawfly", '96': "Salurnis marginella Guerr", '31': "bird cherry-oataphid",
+    '74': "Papilio xuthus", '82': "Nipaecoccus vastalor", '53': "therioaphis maculata Buckton",
+    '78': "Unaspis yanonensis", '94': "Dasineura sp", '30': "green bug",
+    '67': "Ampelophaga", '85': "Dacus dorsalis(Hendel)", '36': "cerodonta denticornis",
+    '58': "Apolygus lucorum", '48': "tarnished plant bug", '14': "rice shell pest"
 }
 
 # ==== Load TFLite Model ====
 print("Loading TFLite model...")
 interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
+
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 print("TFLite model loaded.")
@@ -36,21 +45,16 @@ app = Flask(__name__)
 
 def preprocess(frame):
     img = cv2.resize(frame, IMG_SIZE)
-    img = np.array(img, dtype=np.float32) / 255.0  # Maintain float32 conversion
+    img = np.array(img, dtype=np.float32) / 255.0
     return np.expand_dims(img, axis=0)
 
 def generate_frames():
     while True:
         frame = picam2.capture_array()
+        input_tensor = preprocess(frame)
 
-        # Preprocess and make prediction
-        input_data = preprocess(frame)
-        
-        # Set input tensor and run inference
-        interpreter.set_tensor(input_details[0]['index'], input_data)
+        interpreter.set_tensor(input_details[0]['index'], input_tensor)
         interpreter.invoke()
-        
-        # Get output tensor
         prediction = interpreter.get_tensor(output_details[0]['index'])[0]
 
         idx = np.argmax(prediction)
@@ -62,14 +66,20 @@ def generate_frames():
         cv2.putText(frame, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
                     0.7, (0, 255, 0), 2)
 
-        # Encode to JPEG
         ret, buffer = cv2.imencode('.jpg', frame)
         frame = buffer.tobytes()
 
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
 
-# ... (rest of the Flask routes remain the same) ...
+@app.route('/')
+def index():
+    return "<h2>Raspberry Pi Pest Detection (TFLite)</h2><img src='/video'>"
+
+@app.route('/video')
+def video():
+    return Response(generate_frames(),
+                    mimetype='multipart/x-mixed-replace; boundary=frame')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
