@@ -3,6 +3,8 @@ import cv2
 import numpy as np
 from picamera2 import Picamera2
 import tensorflow as tf
+import RPi.GPIO as GPIO
+
 
 # ==== CONFIG ====
 MODEL_PATH = "model.tflite"
@@ -54,6 +56,7 @@ def preprocess(frame):
 
 def generate_frames():
     global model_active, last_label
+
     last_prediction = None
     prediction_count = 0
     stable_label = "Detecting..."
@@ -61,6 +64,8 @@ def generate_frames():
     required_stability = 2
 
     while True:
+        GPIO.output(LED_PIN, GPIO.HIGH if model_active else GPIO.LOW)
+
         frame = picam2.capture_array()
 
         if model_active:
