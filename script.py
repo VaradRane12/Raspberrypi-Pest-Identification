@@ -52,6 +52,18 @@ def preprocess(frame):
     img = np.array(img, dtype=np.float32) / 255.0
     return np.expand_dims(img, axis=0)
 
+def apply_pink_filter(frame):
+    # Convert RGB to HSV
+    hsv = cv2.cvtColor(frame, cv2.COLOR_RGB2HSV)
+    # Define pink color range in HSV
+    lower_pink = np.array([140, 50, 50])
+    upper_pink = np.array([170, 255, 255])
+    # Mask pink areas
+    mask = cv2.inRange(hsv, lower_pink, upper_pink)
+    pink_highlight = cv2.bitwise_and(frame, frame, mask=mask)
+    # Blend pink-highlighted areas with original frame
+    return cv2.addWeighted(frame, 0.7, pink_highlight, 0.3, 0)
+
 def generate_frames():
     global model_active, last_label
     last_prediction = None
@@ -86,7 +98,10 @@ def generate_frames():
         else:
             stable_label = "Paused"
 
-        # Display label on frame
+        # Apply pink filter
+        frame = apply_pink_filter(frame)
+
+        # Display label
         color = (0, 255, 0) if model_active else (0, 0, 255)
         cv2.putText(frame, stable_label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
                     0.7, color, 2)
@@ -96,7 +111,6 @@ def generate_frames():
 
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
-
 
 @app.route('/')
 def index():
