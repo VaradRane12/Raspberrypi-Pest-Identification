@@ -1,4 +1,4 @@
-from flask import Flask, Response
+from flask import Flask, Response, render_template_string
 import cv2
 import numpy as np
 from picamera2 import Picamera2
@@ -28,7 +28,6 @@ PEST_NAMES = {
 print("Loading TFLite model...")
 interpreter = tf.lite.Interpreter(model_path=MODEL_PATH)
 interpreter.allocate_tensors()
-
 input_details = interpreter.get_input_details()
 output_details = interpreter.get_output_details()
 print("TFLite model loaded.")
@@ -42,17 +41,25 @@ picam2.start()
 
 # ==== Flask App ====
 app = Flask(__name__)
+last_label = "Loading..."
 
 def preprocess(frame):
     img = cv2.resize(frame, IMG_SIZE)
     img = np.array(img, dtype=np.float32) / 255.0
     return np.expand_dims(img, axis=0)
 
+def color_correct(frame):
+    b, g, r = cv2.split(frame)
+    r = cv2.subtract(r, 40)  # Reduce red intensity
+    return cv2.merge((b, g, r))
+
 def generate_frames():
+    global last_label
     while True:
         frame = picam2.capture_array()
-        input_tensor = preprocess(frame)
+        frame = color_correct(frame)  # Remove pink tint
 
+        input_tensor = preprocess(frame)
         interpreter.set_tensor(input_details[0]['index'], input_tensor)
         interpreter.invoke()
         prediction = interpreter.get_tensor(output_details[0]['index'])[0]
@@ -62,8 +69,8 @@ def generate_frames():
         pest_name = PEST_NAMES.get(folder_num, "Unknown Pest")
         confidence = prediction[idx]
 
-        label = f"{pest_name} ({confidence*100:.2f}%)"
-        cv2.putText(frame, label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
+        last_label = f"{pest_name} ({confidence*100:.2f}%)"
+        cv2.putText(frame, last_label, (10, 30), cv2.FONT_HERSHEY_SIMPLEX,
                     0.7, (0, 255, 0), 2)
 
         ret, buffer = cv2.imencode('.jpg', frame)
@@ -74,12 +81,41 @@ def generate_frames():
 
 @app.route('/')
 def index():
-    return "<h2>Raspberry Pi Pest Detection (TFLite)</h2><img src='/video'>"
+    return render_template_string("""
+    <html>
+    <head>
+        <title>Raspberry Pi Pest Detection</title>
+        <style>
+            body { background: #f0f0f0; font-family: sans-serif; text-align: center; padding: 20px; }
+            h1 { color: #333; }
+            .frame { border: 5px solid #4CAF50; border-radius: 8px; display: inline-block; margin: 10px; }
+            .label { font-size: 18px; font-weight: bold; margin-top: 10px; color: #444; }
+        </style>
+    </head>
+    <body>
+        <h1>🐛 Raspberry Pi Pest Detection</h1>
+        <div class="frame"><img src="{{ url_for('video') }}" width="640" height="480"></div>
+        <div class="label">Current Prediction: <span id="label">{{ label }}</span></div>
+
+        <script>
+            setInterval(async () => {
+                const response = await fetch('/label');
+                const data = await response.text();
+                document.getElementById('label').innerText = data;
+            }, 1000);
+        </script>
+    </body>
+    </html>
+    """, label=last_label)
 
 @app.route('/video')
 def video():
     return Response(generate_frames(),
                     mimetype='multipart/x-mixed-replace; boundary=frame')
+
+@app.route('/label')
+def label():
+    return last_label
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=8000)
