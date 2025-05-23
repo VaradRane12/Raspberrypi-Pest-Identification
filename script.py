@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 from picamera2 import Picamera2
 import tensorflow as tf
+import RPi.GPIO as GPIO
 
 # ==== CONFIG ====
 MODEL_PATH = "model.tflite"
@@ -154,4 +155,7 @@ def resume():
     return "Model Resumed"
 
 if __name__ == '__main__':
+    GPIO.output(LED_PIN, GPIO.HIGH if model_active else GPIO.HIGH)
+
     app.run(host='0.0.0.0', port=8000)
+
