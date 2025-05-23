@@ -57,8 +57,8 @@ def generate_frames():
     last_prediction = None
     prediction_count = 0
     stable_label = "Detecting..."
-    min_confidence = 0.85
-    required_stability = 5
+    min_confidence = 0.70
+    required_stability = 2
 
     while True:
         frame = picam2.capture_array()
