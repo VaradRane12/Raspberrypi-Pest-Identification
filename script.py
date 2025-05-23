@@ -48,6 +48,11 @@ picam2.start()
 app = Flask(__name__)
 last_label = "Loading..."
 
+LED_PIN = 17  # or whichever GPIO pin you're using
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(LED_PIN, GPIO.OUT)
+GPIO.output(LED_PIN, GPIO.LOW)  # Start with LED off
+
 def preprocess(frame):
     img = cv2.resize(frame, IMG_SIZE)
     img = np.array(img, dtype=np.float32) / 255.0
@@ -62,6 +67,8 @@ def generate_frames():
     required_stability = 2
 
     while True:
+        GPIO.output(LED_PIN, GPIO.HIGH if model_active else GPIO.LOW)
+
         frame = picam2.capture_array()
 
         if model_active:
@@ -155,7 +162,6 @@ def resume():
     return "Model Resumed"
 
 if __name__ == '__main__':
-    GPIO.output(LED_PIN, GPIO.HIGH if model_active else GPIO.HIGH)
 
     app.run(host='0.0.0.0', port=8000)
 
